@@ -33,13 +33,17 @@ const PORT = process.env.PORT || 10000; // Render and other hosts use dynamic po
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
-app.use(cors({
-  origin: '*', // Allow all origins for the public website
-  credentials: true
-}));
-
+app.use(cors()); // Allow all origins
 app.use(express.json({ limit: '10mb' })); // Allow large payloads for base64 images/audio
 app.use(express.urlencoded({ extended: true }));
+
+// Add explicit headers for strict browsers
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  next();
+});
 
 // Request logger
 app.use((req, _res, next) => {
@@ -48,6 +52,20 @@ app.use((req, _res, next) => {
 });
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
+
+app.get('/', (req, res) => {
+  res.send(`
+    <body style="background:#000;color:#f00;font-family:serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;">
+      <h1 style="font-size:3rem;letter-spacing:0.5rem;text-shadow:0 0 20px #f00;">ANNIYAN</h1>
+      <p style="color:#555;text-transform:uppercase;letter-spacing:0.2rem;">Justice System API — Live & Watching</p>
+      <div style="margin-top:20px;padding:15px;border:1px solid #300;border-radius:10px;background:#0a0000;font-size:0.8rem;color:#888;">
+        Status: <span style="color:#0f0;">ACTIVE</span> | 
+        Version: 1.0.0 | 
+        Auth: ENABLED
+      </div>
+    </body>
+  `);
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/complaints', complaintRoutes);
