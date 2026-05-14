@@ -1,122 +1,98 @@
-/**
- * routes/auth.js — Authentication Routes
- * Handles sign-up, sign-in, code verification (OTP simulation), logout
- */
-
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
+const bcrypt = require('bcryptjs');
 const db = require('../db');
 
-// In-memory OTP store: { contact -> { code, expiresAt } }
+// In-memory store for OTPs
 const otpStore = new Map();
 
 /**
- * POST /api/auth/send-code
- * Sends (simulates) an OTP to the provided contact.
- * Body: { contact: string, mode: 'signin' | 'signup' }
+ * POST /api/auth/register-start
+ * Step 1: User enters email, send OTP
  */
-router.post('/send-code', (req, res) => {
-  const { contact, mode } = req.body;
-
-  if (!contact || !contact.trim()) {
-    return res.status(400).json({ error: 'Contact is required.' });
-  }
+router.post('/register-start', (req, res) => {
+  const { contact } = req.body;
+  if (!contact) return res.status(400).json({ error: 'Email/Mobile is required.' });
 
   const existing = db.findOne('users', { contact: contact.trim() });
+  if (existing) return res.status(409).json({ error: 'User already exists. Log in instead.' });
 
-  if (mode === 'signin' && !existing) {
-    return res.status(404).json({ error: 'User not found. Please Sign Up.' });
-  }
-  if (mode === 'signup' && existing) {
-    return res.status(409).json({ error: 'User already exists. Please Sign In.' });
-  }
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  otpStore.set(contact.trim(), { code, expiresAt: Date.now() + 10 * 60 * 1000 });
 
-  // Generate a 4-digit OTP (fixed to "1234" for demo, real impl would use SMS/email)
-  const code = '1234';
-  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
-  otpStore.set(contact.trim(), { code, expiresAt });
-
-  // In production: send actual SMS/email here
-  console.log(`[OTP] Code for ${contact}: ${code}`);
-
-  return res.json({ success: true, message: 'Code sent. (Use 1234 for testing)' });
+  console.log(`\n[REGISTRATION] OTP for ${contact}: ${code}\n`);
+  return res.json({ success: true, message: 'OTP sent to your contact.' });
 });
 
 /**
- * POST /api/auth/verify-code
- * Verifies OTP and logs in / completes registration.
- * Body: { contact, code, mode, name? }
+ * POST /api/auth/register-verify
+ * Step 2: Verify OTP
  */
-router.post('/verify-code', (req, res) => {
-  const { contact, code, mode, name } = req.body;
+router.post('/register-verify', (req, res) => {
+  const { contact, code } = req.body;
+  const stored = otpStore.get(contact?.trim());
 
-  if (!contact || !code) {
-    return res.status(400).json({ error: 'Contact and code are required.' });
+  if (!stored || stored.code !== code || Date.now() > stored.expiresAt) {
+    return res.status(401).json({ error: 'Invalid or expired code.' });
   }
 
-  const stored = otpStore.get(contact.trim());
-  if (!stored) {
-    return res.status(400).json({ error: 'No OTP found. Please request a new code.' });
-  }
-  if (Date.now() > stored.expiresAt) {
-    otpStore.delete(contact.trim());
-    return res.status(400).json({ error: 'OTP expired. Please request a new code.' });
-  }
-  if (stored.code !== code.trim()) {
-    return res.status(401).json({ error: 'Invalid code. Try again.' });
+  return res.json({ success: true, message: 'Code verified.' });
+});
+
+/**
+ * POST /api/auth/register-complete
+ * Step 3: Save user with name, username, password
+ */
+router.post('/register-complete', async (req, res) => {
+  const { contact, name, username, password } = req.body;
+
+  if (!name || !username || !password) {
+    return res.status(400).json({ error: 'All fields are required.' });
   }
 
-  otpStore.delete(contact.trim());
+  const existingUser = db.findOne('users', { username: username.trim().toLowerCase() });
+  if (existingUser) return res.status(409).json({ error: 'Username already taken.' });
 
-  if (mode === 'signin') {
-    const user = db.findOne('users', { contact: contact.trim() });
-    if (!user) return res.status(404).json({ error: 'User not found. Please Sign Up.' });
-    return res.json({ success: true, user });
-  }
-
-  // Sign Up — name required
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'Name is required for sign up.' });
-  }
-
+  const hashedPassword = await bcrypt.hash(password, 10);
   const newUser = {
     id: uuidv4(),
     name: name.trim(),
+    username: username.trim().toLowerCase(),
     contact: contact.trim(),
+    password: hashedPassword,
     joinedAt: Date.now()
   };
 
   db.insert('users', newUser);
-  return res.json({ success: true, user: newUser });
+  const { password: _, ...userWithoutPass } = newUser;
+  return res.json({ success: true, user: userWithoutPass });
 });
 
 /**
- * POST /api/auth/logout
- * Body: { userId }
- * Simply acknowledges logout (no server-side session in this demo)
+ * POST /api/auth/login
+ * Simple username/password login
  */
-router.post('/logout', (req, res) => {
-  return res.json({ success: true });
-});
+router.post('/login', async (req, res) => {
+  const { loginId, password } = req.body; // loginId can be username or email
 
-/**
- * GET /api/auth/user/:id
- * Returns user profile by ID.
- */
-router.get('/user/:id', (req, res) => {
-  const user = db.findOne('users', { id: req.params.id });
+  if (!loginId || !password) {
+    return res.status(400).json({ error: 'Username and password required.' });
+  }
+
+  // Find user by username OR contact
+  let user = db.findOne('users', { username: loginId.trim().toLowerCase() });
+  if (!user) {
+    user = db.findOne('users', { contact: loginId.trim() });
+  }
+
   if (!user) return res.status(404).json({ error: 'User not found.' });
-  return res.json(user);
-});
 
-/**
- * GET /api/auth/all-users
- * Returns all registered users (Admin only view)
- */
-router.get('/all-users', (req, res) => {
-  const users = db.find('users');
-  return res.json(users);
+  const isValid = await bcrypt.compare(password, user.password);
+  if (!isValid) return res.status(401).json({ error: 'Invalid password.' });
+
+  const { password: _, ...userWithoutPass } = user;
+  return res.json({ success: true, user: userWithoutPass });
 });
 
 module.exports = router;
