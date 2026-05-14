@@ -110,4 +110,13 @@ router.get('/user/:id', (req, res) => {
   return res.json(user);
 });
 
+/**
+ * GET /api/auth/all-users
+ * Returns all registered users (Admin only view)
+ */
+router.get('/all-users', (req, res) => {
+  const users = db.find('users');
+  return res.json(users);
+});
+
 module.exports = router;
