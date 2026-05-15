@@ -11,9 +11,8 @@ const otpStore = new Map();
 // ─── EMAIL CONFIGURATION ─────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // Use STARTTLS
-  requireTLS: true,
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
@@ -34,6 +33,9 @@ router.post('/register-start', async (req, res) => {
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   otpStore.set(contact.trim(), { code, expiresAt: Date.now() + 10 * 60 * 1000 });
 
+  // ⚠️ LOG THE CODE IMMEDIATELY (Check your Render Logs for this!)
+  console.log(`\n[OTP GENERATED] Target: ${contact} | Code: ${code}\n`);
+
   // ─── SEND REAL EMAIL ───────────────────────────────────────────────────────
   const mailOptions = {
     from: `"Anniyan Justice System" <${process.env.EMAIL_USER}>`,
@@ -44,22 +46,19 @@ router.post('/register-start', async (req, res) => {
         <h1 style="color: #f00; letter-spacing: 5px;">ANNIYAN</h1>
         <p style="font-size: 1.2rem; color: #ccc;">JUSTICE IS WATCHING YOU</p>
         <hr style="border: 0; border-top: 1px solid #300; margin: 20px 0;">
-        <p>Use the code below to verify your identity and join the struggle for justice:</p>
+        <p>Use the code below to verify your identity:</p>
         <div style="font-size: 3rem; font-weight: bold; color: #f00; margin: 30px 0; letter-spacing: 10px;">
           ${code}
         </div>
-        <p style="font-size: 0.8rem; color: #555;">This code will expire in 10 minutes.</p>
-        <p style="color: #f00; margin-top: 40px;">IF YOU COMMIT A CRIME, ANNIYAN WILL FIND YOU.</p>
       </div>
     `
   };
 
   // ─── SEND REAL EMAIL (Background) ──────────────────────────────────────────
   transporter.sendMail(mailOptions)
-    .then(() => console.log(`[EMAIL SENT] Code for ${contact}: ${code}`))
+    .then(() => console.log(`[EMAIL SENT] to ${contact}`))
     .catch(err => {
-      console.error('[EMAIL ERROR]', err);
-      console.log(`[FALLBACK OTP] ${contact}: ${code}`);
+      console.error('[EMAIL ERROR]', err.message);
     });
 
   // Respond immediately so the user isn't stuck waiting
