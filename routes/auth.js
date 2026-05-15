@@ -2,16 +2,26 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
+const nodemailer = require('nodemailer');
 const db = require('../db');
 
 // In-memory store for OTPs
 const otpStore = new Map();
 
+// ─── EMAIL CONFIGURATION ─────────────────────────────────────────────────────
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
 /**
  * POST /api/auth/register-start
  * Step 1: User enters email, send OTP
  */
-router.post('/register-start', (req, res) => {
+router.post('/register-start', async (req, res) => {
   const { contact } = req.body;
   if (!contact) return res.status(400).json({ error: 'Email/Mobile is required.' });
 
@@ -21,8 +31,36 @@ router.post('/register-start', (req, res) => {
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   otpStore.set(contact.trim(), { code, expiresAt: Date.now() + 10 * 60 * 1000 });
 
-  console.log(`\n[REGISTRATION] OTP for ${contact}: ${code}\n`);
-  return res.json({ success: true, message: 'OTP sent to your contact.' });
+  // ─── SEND REAL EMAIL ───────────────────────────────────────────────────────
+  const mailOptions = {
+    from: `"Anniyan Justice System" <${process.env.EMAIL_USER}>`,
+    to: contact.trim(),
+    subject: 'Your Anniyan Verification Code',
+    html: `
+      <div style="font-family: serif; background: #000; color: #fff; padding: 40px; text-align: center; border: 2px solid #f00;">
+        <h1 style="color: #f00; letter-spacing: 5px;">ANNIYAN</h1>
+        <p style="font-size: 1.2rem; color: #ccc;">JUSTICE IS WATCHING YOU</p>
+        <hr style="border: 0; border-top: 1px solid #300; margin: 20px 0;">
+        <p>Use the code below to verify your identity and join the struggle for justice:</p>
+        <div style="font-size: 3rem; font-weight: bold; color: #f00; margin: 30px 0; letter-spacing: 10px;">
+          ${code}
+        </div>
+        <p style="font-size: 0.8rem; color: #555;">This code will expire in 10 minutes.</p>
+        <p style="color: #f00; margin-top: 40px;">IF YOU COMMIT A CRIME, ANNIYAN WILL FIND YOU.</p>
+      </div>
+    `
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`[EMAIL SENT] Code for ${contact}: ${code}`);
+    return res.json({ success: true, message: 'OTP sent to your email.' });
+  } catch (error) {
+    console.error('[EMAIL ERROR]', error);
+    // Fallback: still log it so admin can see it if email fails
+    console.log(`[FALLBACK OTP] ${contact}: ${code}`);
+    return res.status(500).json({ error: 'Failed to send email. Check Render logs for code.' });
+  }
 });
 
 /**
