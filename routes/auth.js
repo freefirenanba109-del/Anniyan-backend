@@ -51,16 +51,16 @@ router.post('/register-start', async (req, res) => {
     `
   };
 
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`[EMAIL SENT] Code for ${contact}: ${code}`);
-    return res.json({ success: true, message: 'OTP sent to your email.' });
-  } catch (error) {
-    console.error('[EMAIL ERROR]', error);
-    // Fallback: still log it so admin can see it if email fails
-    console.log(`[FALLBACK OTP] ${contact}: ${code}`);
-    return res.status(500).json({ error: 'Failed to send email. Check Render logs for code.' });
-  }
+  // ─── SEND REAL EMAIL (Background) ──────────────────────────────────────────
+  transporter.sendMail(mailOptions)
+    .then(() => console.log(`[EMAIL SENT] Code for ${contact}: ${code}`))
+    .catch(err => {
+      console.error('[EMAIL ERROR]', err);
+      console.log(`[FALLBACK OTP] ${contact}: ${code}`);
+    });
+
+  // Respond immediately so the user isn't stuck waiting
+  return res.json({ success: true, message: 'OTP generated.' });
 });
 
 /**
