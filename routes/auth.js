@@ -13,6 +13,9 @@ const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 465,
   secure: true,
+  tls: {
+    rejectUnauthorized: false // This helps bypass connection blocks on cloud servers
+  },
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
